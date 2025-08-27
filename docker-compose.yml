@@ -77,8 +77,8 @@ services:
       - KONG_PROXY_ERROR_LOG=/dev/stderr
       - KONG_ADMIN_ERROR_LOG=/dev/stderr
       # penting: GUI diarahkan ke proxy nginx
-      - KONG_ADMIN_GUI_URL=http://10.10.0.242:8080
-      - KONG_ADMIN_API_URL=http://10.10.0.242:8080/admin/
+      - KONG_ADMIN_GUI_URL=http://<ip_host_docker>:8080
+      - KONG_ADMIN_API_URL=http://<ip_host_docker>:8080/admin/
     ports:
       - "8000:8000"   # Proxy
       - "8001:8001"   # Admin API 
