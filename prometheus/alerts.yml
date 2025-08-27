@@ -1,0 +1,43 @@
+groups:
+  - name: kong-alerts
+    interval: 30s
+    rules:
+      # 🔴 Banyak error 5xx
+      - alert: HighErrorRate
+        expr: (rate(kong_http_requests_total{code=~"5.."}[5m]) / rate(kong_http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kong Gateway Error Rate Tinggi"
+          description: "Lebih dari 5% request berstatus 5xx selama 2 menit terakhir."
+
+      # 🟠 Latency Tinggi (p95 > 1 detik)
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(kong_latency_bucket[5m])) by (le, service)) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latency Tinggi di Service"
+          description: "Service {{ $labels.service }} memiliki p95 latency > 1 detik."
+
+      # 🔴 Upstream Unhealthy
+      - alert: UpstreamUnhealthy
+        expr: kong_upstream_target_health{state="unhealthy"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Upstream Tidak Sehat"
+          description: "Ada upstream service dalam kondisi UNHEALTHY."
+
+      # 🔴 Nginx Active Connections melebihi 1000
+      - alert: HighConnections
+        expr: kong_nginx_http_current_connections{state="active"} > 1000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Terlalu Banyak Active Connections"
+          description: "Kong nginx active connections > 1000."

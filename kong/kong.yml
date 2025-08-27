@@ -1,0 +1,43 @@
+_format_version: "3.0"
+_transform: true
+
+plugins:
+  - name: prometheus
+    config:
+      latency_metrics: true
+      status_code_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+services:
+  - name: akademik-service
+    url: http://akademik:5000
+    routes:
+      - name: akademik-route
+        paths:
+          - /akademik
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+      - name: file-log
+        config:
+          path: /usr/local/kong/logs/kong_akademik.log
+          reopen: true
+
+  - name: kepegawaian-service
+    url: http://kepegawaian:5001
+    routes:
+      - name: kepegawaian-route
+        paths:
+          - /kepegawaian
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+      - name: file-log
+        config:
+          path: /usr/local/kong/logs/kong_kepegawaian.log
+          reopen: true

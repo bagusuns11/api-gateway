@@ -1,0 +1,202 @@
+
+services:
+  akademik:
+    build:
+      context: ./services/akademik
+    environment:
+      - MYSQL_HOST=akademik_db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - MYSQL_DATABASE=akademik_db
+    ports:
+      - "5000:5000"
+    depends_on:
+      - akademik_db
+    networks:
+      - backend
+    container_name: akademik
+    restart: unless-stopped
+
+  kepegawaian:
+    build:
+      context: ./services/kepegawaian
+    environment:
+      - MYSQL_HOST=kepegawaian_db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - MYSQL_DATABASE=kepegawaian_db
+    ports:
+      - "5001:5001"
+    depends_on:
+      - kepegawaian_db
+    networks:
+      - backend
+    container_name: kepegawaian
+    restart: unless-stopped
+
+  akademik_db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=akademik_db
+    volumes:
+      - ./services/akademik/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - backend
+    container_name: akademik_db
+    restart: unless-stopped
+
+  kepegawaian_db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=kepegawaian_db
+    volumes:
+      - ./services/kepegawaian/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - backend
+    container_name: kepegawaian_db
+    restart: unless-stopped
+
+  kong:
+    image: kong:latest
+    container_name: kong
+    environment:
+      - KONG_DATABASE=off
+      - KONG_PLUGINS=bundled,prometheus
+      - KONG_PROXY_LISTEN=0.0.0.0:8000
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+      - KONG_ADMIN_GUI_LISTEN=0.0.0.0:8002
+      - KONG_STATUS_LISTEN=0.0.0.0:8100
+      - KONG_DECLARATIVE_CONFIG=/kong/kong.yml
+      # logging
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      # penting: GUI diarahkan ke proxy nginx
+      - KONG_ADMIN_GUI_URL=http://10.10.0.242:8080
+      - KONG_ADMIN_API_URL=http://10.10.0.242:8080/admin/
+    ports:
+      - "8000:8000"   # Proxy
+      - "8001:8001"   # Admin API 
+      - "8002:8002"   # Manager GUI 
+      - "8100:8100"   # metrics
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml
+    networks:
+      - backend
+    restart: unless-stopped
+
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    depends_on:
+      - kong
+    ports:
+      - "8080:8080"   # Developer akses GUI/Admin API lewat port ini
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/htpasswd:/etc/nginx/.htpasswd:ro
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - backend
+
+  # 🔹 Prometheus
+  prometheus:
+    image: prom/prometheus 
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - backend
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+
+  # 🔹 Loki
+
+  loki_init:
+    image: alpine
+    container_name: loki-init
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml
+      - ./loki/wal:/wal  # Mount the wal directory
+      - ./loki/index:/tmp/loki/index  # Mount the index directory
+      - ./loki/cache:/tmp/loki/cache  # Mount the cache directory
+      - ./loki/chunks:/tmp/loki/chunks  # Mount the chunks directory
+      - ./loki/compactor:/tmp/loki/compactor # Mount the compactor directory
+    entrypoint: ["sh", "-c", "chmod -R 777 /wal /tmp/loki/index /tmp/loki/cache /tmp/loki/chunks /tmp/loki/compactor"]
+    networks:
+      - backend
+    restart: "no"
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/metrics"]
+      interval: 30s
+      retries: 3
+      start_period: 50s
+      timeout: 10s
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml
+      - ./loki/wal:/wal  # Mount the wal directory
+      - ./loki/index:/tmp/loki/index  # Mount the index directory
+      - ./loki/cache:/tmp/loki/cache  # Mount the cache directory
+      - ./loki/chunks:/tmp/loki/chunks  # Mount the chunks directory
+      - ./loki/compactor:/tmp/loki/compactor # Mount the compactor directory
+    command: -config.file=/etc/loki/config.yml
+    depends_on:
+      - loki_init
+    restart: unless-stopped
+
+  # 🔹 Promtail (collect logs from containers)
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - /var/log:/var/log
+      - ./nginx/logs:/var/log/nginx:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./promtail/config.yml:/etc/promtail/config.yml
+      - ./promtail/positions:/tmp:rw  # Make /tmp writable by Promtail
+    networks:
+      - backend
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+
+  # 🔹 Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - backend
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  loki_data:  # Definisikan named volume untuk /wal

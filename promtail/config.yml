@@ -1,0 +1,60 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Scrape log semua container lewat Docker socket
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: [__meta_docker_container_name]
+        regex: "kong.*"
+        target_label: service
+        replacement: kong
+      - source_labels: [__meta_docker_container_name]
+        regex: "nginx.*"
+        target_label: service
+        replacement: nginx
+    pipeline_stages:
+      # Ekstrak client_ip dari log (format access log)
+      - regex:
+          expression: '^(?P<client_ip>\d+\.\d+\.\d+\.\d+)'
+      - labels:
+          client_ip:
+      # Ekstrak HTTP method + path
+      - regex:
+          expression: '\"(?P<method>GET|POST|PUT|PATCH|DELETE|OPTIONS) (?P<path>[^ ]+) HTTP'
+      - labels:
+          method:
+          path:
+
+  # Tambahan khusus scrape file log dari nginx-proxy (opsional, kalau mau tetap pakai file log)
+  - job_name: nginx-proxy-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx-proxy-logs
+          container: nginx-proxy
+          service: nginx
+          __path__: /var/log/nginx/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<client_ip>\d+\.\d+\.\d+\.\d+)'
+      - labels:
+          client_ip:
+      - regex:
+          expression: '\"(?P<method>GET|POST|PUT|PATCH|DELETE|OPTIONS) (?P<path>[^ ]+) HTTP'
+      - labels:
+          method:
+          path:
