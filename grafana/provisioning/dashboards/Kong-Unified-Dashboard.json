@@ -94,7 +94,7 @@
   "targets": [
     {
       "datasource": { "type": "loki", "uid": "loki_ds" },
-      "expr": "topk(10, sum by (client_ip) (count_over_time({container=\"nginx-proxy\"} | regexp `^(?P<client_ip>\\d+\\.\\d+\\.\\d+\\.\\d+)` [5m])))"
+      "expr": "topk(10, sum by (client_ip) (count_over_time({service=\"kong\"} | regexp `^(?P<client_ip>\\d+\\.\\d+\\.\\d+\\.\\d+)` [5m])))",
       "refId": "F"
     }
   ],
@@ -108,8 +108,7 @@
   "targets": [
     {
       "datasource": { "type": "loki", "uid": "loki_ds" },
-      "expr": "topk(10, sum by (path) (count_over_time({container=\"nginx-proxy\"} | regexp `^(?P<client_ip>\\d+\\.\\d+\\.\\d+\\.\\d+) - - \\[[^]]+\\] \\\"(?P<method>[A-Z]+) (?P<path>[^ ]+)` [5m])))"
-
+      "expr": "topk(10, sum by (path) (count_over_time({service=\"kong\"} | regexp `(?P<method>GET|POST|PUT|PATCH|DELETE|OPTIONS) (?P<path>[^ ]+) HTTP` [5m])))",
       "refId": "G"
     }
   ],
